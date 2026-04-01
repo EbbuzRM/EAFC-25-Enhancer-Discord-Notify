@@ -1,11 +1,12 @@
+require('dotenv').config();
 const express = require('express');
 const bodyParser = require('body-parser');
 const cors = require('cors');
 const axios = require('axios');
 const app = express();
 
-const PORT = 3800;
-const DISCORD_WEBHOOK_URL = 'https://discord.com/api/webhooks/1487953313424081089/K3WY0fs5ycGD23pBKbWJiNPei2Gk1r5tT_j1rZlr3AuB7QQ8XlpR16X3RHqU8lhYJtnP';
+const PORT = process.env.PORT || 10000;
+const DISCORD_WEBHOOK_URL = process.env.DISCORD_WEBHOOK_URL;
 
 // Middleware
 app.use(cors());
