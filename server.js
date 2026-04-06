@@ -143,10 +143,35 @@ const processQueue = async () => {
     const { embed, resolve, reject } = webhookQueue.shift();
     
     try {
-      await axios.post(DISCORD_WEBHOOK_URL, { embeds: [embed] }, {
+      const response = await axios.post(DISCORD_WEBHOOK_URL, { embeds: [embed] }, {
         timeout: 10000,
         validateStatus: (status) => status < 500 // Don't throw on 4xx
       });
+      
+      // Check response status (axios doesn't throw on 4xx with this config)
+      if (response.status === 429) {
+        const retryAfter = response.headers['retry-after'];
+        const retryAfterMs = retryAfter ? parseInt(retryAfter) * 1000 : Math.pow(2, retryCount) * 1000;
+        
+        rateLimitedUntil = Date.now() + retryAfterMs;
+        retryCount++;
+        
+        console.warn(`⚠️ Rate limited! Retry after: ${Math.ceil(retryAfterMs / 1000)}s (attempt ${retryCount}/${MAX_RETRIES})`);
+        
+        if (retryCount >= MAX_RETRIES) {
+          console.error('❌ Max retries reached, dropping remaining messages');
+          webhookQueue.length = 0;
+          reject(new Error('Max retries exceeded'));
+          break;
+        }
+        
+        // Re-queue the failed message
+        webhookQueue.unshift({ embed, resolve, reject });
+        isProcessing = false;
+        return;
+      }
+      
+      console.log('✅ Webhook sent successfully');
       retryCount = 0; // Reset on success
       resolve();
     } catch (error) {
@@ -182,9 +207,23 @@ const processQueue = async () => {
 const queueWebhook = (embed) => {
   return new Promise((resolve, reject) => {
     webhookQueue.push({ embed, resolve, reject });
+    console.log(`📤 Queued webhook (queue: ${webhookQueue.length})`);
     processQueue();
   });
 };
+
+// Status endpoint for debugging
+app.get('/status', (req, res) => {
+  const now = Date.now();
+  const waitTime = now < rateLimitedUntil ? Math.ceil((rateLimitedUntil - now) / 1000) : 0;
+  res.json({
+    queueLength: webhookQueue.length,
+    isProcessing,
+    rateLimited: waitTime > 0,
+    waitSeconds: waitTime,
+    retryCount
+  });
+});
 
 app.post('/webhook', async (req, res) => {
   try {
