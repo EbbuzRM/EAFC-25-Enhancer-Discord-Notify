@@ -118,6 +118,142 @@ const parseMessage = (data) => {
   }
 };
 
+// Rate limiting and queue management
+const webhookQueue = [];
+let isProcessing = false;
+let rateLimitedUntil = 0;
+let retryCount = 0;
+const MAX_RETRIES = 5;
+
+// Process webhook queue with rate limiting
+const processQueue = async () => {
+  if (isProcessing || webhookQueue.length === 0) return;
+  
+  isProcessing = true;
+  
+  while (webhookQueue.length > 0) {
+    const now = Date.now();
+    if (now < rateLimitedUntil) {
+      const waitTime = rateLimitedUntil - now;
+      console.log(`⏳ Rate limited, waiting ${Math.ceil(waitTime / 1000)}s before retry...`);
+      await new Promise(resolve => setTimeout(resolve, waitTime));
+      continue;
+    }
+
+    const { embed, resolve, reject } = webhookQueue.shift();
+    
+    try {
+      await axios.post(DISCORD_WEBHOOK_URL, { embeds: [embed] }, {
+        timeout: 10000,
+        validateStatus: (status) => status < 500 // Don't throw on 4xx
+      });
+      retryCount = 0; // Reset on success
+      resolve();
+    } catch (error) {
+      if (error.response?.status === 429) {
+        const retryAfter = error.response.headers['retry-after'];
+        const retryAfterMs = retryAfter ? parseInt(retryAfter) * 1000 : Math.pow(2, retryCount) * 1000;
+        
+        rateLimitedUntil = Date.now() + retryAfterMs;
+        retryCount++;
+        
+        console.warn(`⚠️ Rate limited! Retry after: ${Math.ceil(retryAfterMs / 1000)}s (attempt ${retryCount}/${MAX_RETRIES})`);
+        
+        if (retryCount >= MAX_RETRIES) {
+          console.error('❌ Max retries reached, dropping remaining messages');
+          webhookQueue.length = 0;
+          reject(new Error('Max retries exceeded'));
+          break;
+        }
+        
+        // Re-queue the failed message
+        webhookQueue.unshift({ embed, resolve, reject });
+      } else {
+        console.error('❌ Webhook error:', error.message);
+        reject(error);
+      }
+    }
+  }
+  
+  isProcessing = false;
+};
+
+// Queue webhook message
+const queueWebhook = (embed) => {
+  return new Promise((resolve, reject) => {
+    webhookQueue.push({ embed, resolve, reject });
+    processQueue();
+  });
+};
+
+// Rate limiting and queue management
+const webhookQueue = [];
+let isProcessing = false;
+let rateLimitedUntil = 0;
+let retryCount = 0;
+const MAX_RETRIES = 5;
+
+// Process webhook queue with rate limiting
+const processQueue = async () => {
+  if (isProcessing || webhookQueue.length === 0) return;
+  
+  isProcessing = true;
+  
+  while (webhookQueue.length > 0) {
+    const now = Date.now();
+    if (now < rateLimitedUntil) {
+      const waitTime = rateLimitedUntil - now;
+      console.log(`⏳ Rate limited, waiting ${Math.ceil(waitTime / 1000)}s before retry...`);
+      await new Promise(resolve => setTimeout(resolve, waitTime));
+      continue;
+    }
+
+    const { embed, resolve, reject } = webhookQueue.shift();
+    
+    try {
+      await axios.post(DISCORD_WEBHOOK_URL, { embeds: [embed] }, {
+        timeout: 10000,
+        validateStatus: (status) => status < 500 // Don't throw on 4xx
+      });
+      retryCount = 0; // Reset on success
+      resolve();
+    } catch (error) {
+      if (error.response?.status === 429) {
+        const retryAfter = error.response.headers['retry-after'];
+        const retryAfterMs = retryAfter ? parseInt(retryAfter) * 1000 : Math.pow(2, retryCount) * 1000;
+        
+        rateLimitedUntil = Date.now() + retryAfterMs;
+        retryCount++;
+        
+        console.warn(`⚠️ Rate limited! Retry after: ${Math.ceil(retryAfterMs / 1000)}s (attempt ${retryCount}/${MAX_RETRIES})`);
+        
+        if (retryCount >= MAX_RETRIES) {
+          console.error('❌ Max retries reached, dropping remaining messages');
+          webhookQueue.length = 0;
+          reject(new Error('Max retries exceeded'));
+          break;
+        }
+        
+        // Re-queue the failed message
+        webhookQueue.unshift({ embed, resolve, reject });
+      } else {
+        console.error('❌ Webhook error:', error.message);
+        reject(error);
+      }
+    }
+  }
+  
+  isProcessing = false;
+};
+
+// Queue webhook message
+const queueWebhook = (embed) => {
+  return new Promise((resolve, reject) => {
+    webhookQueue.push({ embed, resolve, reject });
+    processQueue();
+  });
+};
+
 app.post('/webhook', async (req, res) => {
   try {
     console.log("=== Richiesta ricevuta ===", JSON.stringify(req.body, null, 2));
@@ -143,7 +279,19 @@ app.post('/webhook', async (req, res) => {
       timestamp: new Date().toISOString()
     };
 
-    await axios.post(DISCORD_WEBHOOK_URL, { embeds: [embed] });
+    // Queue the webhook instead of sending immediately
+    queueWebhook(embed).catch(err => {
+      console.error('Failed to send webhook:', err.message);
+    });
+    
+    res.status(200).send('OK');
+
+  } catch (error) {
+    console.error('🔥 Errore critico:', error);
+    res.status(500).send('Errore interno');
+  }
+});
+    
     res.status(200).send('OK');
 
   } catch (error) {
