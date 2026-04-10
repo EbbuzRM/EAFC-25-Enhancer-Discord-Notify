@@ -125,6 +125,9 @@ let rateLimitedUntil = 0;
 let retryCount = 0;
 const MAX_RETRIES = 5;
 
+// Debug: Log config on startup
+console.log('🔧 Discord Webhook URL:', DISCORD_WEBHOOK_URL ? 'set' : 'MISSING!');
+
 // Process webhook queue with rate limiting
 const processQueue = async () => {
   if (isProcessing || webhookQueue.length === 0) return;
@@ -138,6 +141,11 @@ const processQueue = async () => {
       console.log(`⏳ Rate limited, waiting ${Math.ceil(waitTime / 1000)}s before retry...`);
       await new Promise(resolve => setTimeout(resolve, waitTime));
       continue;
+    } else if (rateLimitedUntil > 0 && now >= rateLimitedUntil) {
+      // Rate limit expired, reset retry count
+      console.log('🔓 Rate limit expired, resetting...');
+      rateLimitedUntil = 0;
+      retryCount = 0;
     }
 
     const { embed, resolve, reject } = webhookQueue.shift();
@@ -208,7 +216,12 @@ const queueWebhook = (embed) => {
   return new Promise((resolve, reject) => {
     webhookQueue.push({ embed, resolve, reject });
     console.log(`📤 Queued webhook (queue: ${webhookQueue.length})`);
-    processQueue();
+    
+    // Force process if queue has message but not processing (helps after restart)
+    if (!isProcessing && webhookQueue.length > 0) {
+      console.log('🔥 Forcing queue process...');
+      processQueue();
+    }
   });
 };
 
