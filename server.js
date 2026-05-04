@@ -43,6 +43,7 @@ const parseMessage = (data) => {
         type: 'stats',
         color: 0xFFFF00, // Giallo
         fields: [
+          { name: "💵 Profitto", value: stats[1], inline: true },
           { name: "🪙 Monete", value: stats[2], inline: true },
           { name: "🔍 Ricerche", value: stats[3], inline: true },
           { name: "✅ Vinte", value: stats[4], inline: true },
@@ -59,7 +60,7 @@ const parseMessage = (data) => {
         color: 0xFF0000, // Rosso
         fields: [
           { name: "⚠️ Oggetto", value: match[1], inline: false },
-          { name: "Prezzo ", value: `${match[2]} coins`, inline: true },
+          { name: "Prezzo", value: `${match[2]} coins`, inline: true },
           { name: "Motivo", value: "Offerta superata", inline: true }
         ]
       };
@@ -81,16 +82,16 @@ const parseMessage = (data) => {
     }
 
     // 6. Vendita Oggetto
-    if (/Successfully listed .+? for \d+ for 1 Hour, coins \d+/i.test(description)) {
-      const match = description.match(/Successfully listed (.+?) for (\d+) for 1 Hour, coins (\d+)/i);
+    if (/Successfully listed .+? for \d+ for .+?, coins \d+/i.test(description)) {
+      const match = description.match(/Successfully listed (.+?) for (\d+) for (.+?), coins (\d+)/i);
       return {
         type: 'sell',
         color: 0x0000FF, // Blu
         fields: [
           { name: "📦 Oggetto Listato", value: match[1], inline: false },
           { name: "Prezzo List", value: `${match[2]} coins`, inline: true },
-          { name: "Durata", value: "1 Ora", inline: true },
-          { name: "Saldo", value: `${match[3]} coins`, inline: false }
+          { name: "Durata", value: match[3], inline: true },
+          { name: "Saldo", value: `${match[4]} coins`, inline: false }
         ]
       };
     }
@@ -255,7 +256,7 @@ app.post('/webhook', async (req, res) => {
         'stats': '📊 Statistiche',
         'bidLost': '⚠️ Acquisto Fallito',
         'buy': '🛒 Acquisto Riuscito', 
-        'sell': '📤 Vendita Effettuata',
+        'sell': '📤 List Effettuato',
         'sold': '💰 Vendita con Profitto'
       }[result.type] || '🔔 Notifica Generica',
       color: result.color,
