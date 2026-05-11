@@ -111,6 +111,34 @@ const parseMessage = (data) => {
       };
     }
 
+    // 8. Transfer List
+    if (/Item moved to transfer list/i.test(description)) {
+      const match = description.match(/(.+?) Item moved to transfer list/i);
+      return {
+        type: 'transferList',
+        color: 0x9932CC, // Viola
+        fields: [
+          { name: "📋 Giocatore", value: match[1], inline: false },
+          { name: "📦 Azione", value: "Spostato in Transfer List", inline: true }
+        ]
+      };
+    }
+
+    // 9. Bid Riuscito
+    if (/Successfully B: \d+ .+? at \d+, coins \d+/i.test(description)) {
+      const match = description.match(/Successfully B: (\d+) (.+?) at (\d+), coins (\d+)/i);
+      return {
+        type: 'bid',
+        color: 0x00FF00, // Verde
+        fields: [
+          { name: "🎉 Giocatore", value: match[2], inline: false },
+          { name: "Offerta", value: match[1], inline: true },
+          { name: "Prezzo", value: `${match[3]} coins`, inline: true },
+          { name: "Saldo Residuo", value: `${match[4]} coins`, inline: false }
+        ]
+      };
+    }
+
     return { type: 'unknown', color: 0x7289DA }; // Default
 
   } catch (error) {
@@ -257,7 +285,9 @@ app.post('/webhook', async (req, res) => {
         'bidLost': '⚠️ Acquisto Fallito',
         'buy': '🛒 Acquisto Riuscito', 
         'sell': '📤 List Effettuato',
-        'sold': '💰 Vendita con Profitto'
+        'sold': '💰 Vendita con Profitto',
+        'transferList': '📋 Transfer List',
+        'bid': '🛒 Bid Riuscito'
       }[result.type] || '🔔 Notifica Generica',
       color: result.color,
       fields: result.fields,
